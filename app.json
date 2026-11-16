@@ -1,25 +1,27 @@
 {
   "expo": {
-    "name": "nls-maps",
+    "name": "NLS Maps",
     "slug": "nls-maps",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "scheme": "nlsmaps",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.noqtrnl.logicsystems",
+      "buildNumber": "1"
     },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "NLS Maps uses your location in the background so navigation keeps working with the screen off.",
+          "locationWhenInUsePermission": "NLS Maps uses your location to show where you are on the map.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      "expo-live-activity"
+    ]
   }
 }
