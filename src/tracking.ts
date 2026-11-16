@@ -20,7 +20,7 @@ function islandState(): LiveActivity.LiveActivityState {
   const kmh = s.last?.speed != null && s.last.speed >= 0 ? Math.round(s.last.speed * 3.6) : 0;
   return {
     title: `NLS · fix ${s.fixes}`,
-    subtitle: s.last ? `${kmh} km/h · ${s.last.lat.toFixed(4)}, ${s.last.lng.toFixed(4)}` : 'waiting for gps…',
+    subtitle: s.last ? `${kmh} km/h · ${s.backgroundFixes} in background` : 'waiting for gps…',
     progressBar: { progress: (s.fixes % 20) / 20 },
   };
 }
@@ -44,6 +44,7 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(GPS_TASK, async
   if (id) {
     try {
       LiveActivity.updateActivity(id, islandState());
+      setState({ islandUpdates: getState().islandUpdates + 1 });
     } catch (e) {
       setState({ error: `Island update failed: ${String(e)}` });
     }

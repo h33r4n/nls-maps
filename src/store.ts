@@ -9,6 +9,7 @@ type State = {
   last: Fix | null;
   appActive: boolean;
   error: string | null;
+  islandUpdates: number;
 };
 
 const state: State = {
@@ -19,6 +20,7 @@ const state: State = {
   last: null,
   appActive: true,
   error: null,
+  islandUpdates: 0,
 };
 
 const listeners = new Set<() => void>();

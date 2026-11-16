@@ -51,7 +51,8 @@ export default function App() {
           <Row k="dynamic island" v={s.islandId ? 'on' : 'off'} />
           <Row k="gps fixes" v={String(s.fixes)} />
           <Row k="fixes while in background" v={String(s.backgroundFixes)} />
-          <Row k="last position" v={s.last ? `${s.last.lat.toFixed(5)}, ${s.last.lng.toFixed(5)}` : '—'} />
+          <Row k="island updates sent" v={String(s.islandUpdates)} />
+          <Row k="last fix" v={s.last ? new Date(s.last.time).toLocaleTimeString() : '—'} />
         </View>
 
         <View style={styles.buttons}>
