@@ -16,6 +16,12 @@ jobs:
   build:
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      # API keys from repo secrets (empty until added — those features stay off)
+      TOMTOM_KEY: ${{ secrets.TOMTOM_KEY }}
+      VIC_ROADS_KEY: ${{ secrets.VIC_ROADS_KEY }}
+      PTV_DEV_ID: ${{ secrets.PTV_DEV_ID }}
+      PTV_KEY: ${{ secrets.PTV_KEY }}
     steps:
       - uses: actions/checkout@v4
 

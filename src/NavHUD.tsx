@@ -8,6 +8,7 @@ import { C, F, PillButton, tap } from './ui';
 export default function NavHUD({
   nav,
   speedKmh,
+  limit,
   onEnd,
   onVoice,
   onRecentre,
@@ -15,6 +16,7 @@ export default function NavHUD({
 }: {
   nav: NavState;
   speedKmh: number;
+  limit: number | null;
   onEnd: () => void;
   onVoice: () => void;
   onRecentre: () => void;
@@ -99,10 +101,15 @@ export default function NavHUD({
 
       {/* trip bar */}
       <View style={[s.bar, { bottom: insets.bottom + 12 }]}>
-        <View style={s.speed}>
-          <Text style={s.speedNum}>{speedKmh}</Text>
+        <View style={[s.speed, limit != null && speedKmh > limit + 2 && s.speedOver]}>
+          <Text style={[s.speedNum, limit != null && speedKmh > limit + 2 && { color: '#FF3B4A' }]}>{speedKmh}</Text>
           <Text style={s.speedUnit}>km/h</Text>
         </View>
+        {limit != null ? (
+          <View style={s.limit}>
+            <Text style={s.limitNum}>{limit}</Text>
+          </View>
+        ) : null}
         <View style={{ flex: 1 }}>
           <Text style={s.eta}>{nav.arrived ? 'you are here' : eta}</Text>
           <Text style={s.left}>{nav.arrived ? nav.dest?.name : `${fmtDur(nav.remainingS)} · ${fmtDist(nav.remaining)}`}</Text>
@@ -161,6 +168,9 @@ const s = StyleSheet.create({
     gap: 14,
   },
   speed: { width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  speedOver: { borderColor: '#FF3B4A' },
+  limit: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#FFFFFF', borderWidth: 5, borderColor: '#E0242F', alignItems: 'center', justifyContent: 'center', marginLeft: -6 },
+  limitNum: { fontFamily: F.brand, fontSize: 17, color: '#0B0B0B' },
   speedNum: { fontFamily: F.brand, fontSize: 20, color: '#FFFFFF', lineHeight: 22 },
   speedUnit: { fontFamily: F.mono, fontSize: 9, color: C.muted },
   eta: { fontFamily: F.brand, fontSize: 24, color: '#FFFFFF' },

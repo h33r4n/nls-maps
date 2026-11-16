@@ -1,6 +1,7 @@
-import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActionSheetIOS, Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fmtDist, metres } from './geo';
 import { CATS, ICONS, type PlaceKind } from './places';
+import { removePlace, sameSpot, savePlace, tagLabel, useSaved } from './saved';
 import { C, F, PillButton } from './ui';
 
 export type Picked = { kind: PlaceKind; name: string; detail?: string; lat: number; lng: number };
@@ -21,6 +22,21 @@ export default function PlaceCard({
   const label = place.kind === 'place' ? place.detail || 'place' : CATS.find((c) => c.id === place.kind)!.short;
   const d = me ? metres(me, place) : null;
   const isStop = place.kind === 'bus' || place.kind === 'tram' || place.kind === 'train';
+  const saved = useSaved().find((s) => sameSpot(s, place));
+
+  const onSave = () => {
+    const opts = ['Save as Home', 'Save as Work', 'Save to favourites', ...(saved ? ['Remove from saved'] : []), 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options: opts, cancelButtonIndex: opts.length - 1, destructiveButtonIndex: saved ? 3 : undefined, userInterfaceStyle: 'dark' },
+      (i) => {
+        const base = { name: place.name, detail: place.detail, lat: place.lat, lng: place.lng, kind: place.kind };
+        if (i === 0) savePlace({ ...base, tag: 'home' });
+        else if (i === 1) savePlace({ ...base, tag: 'work' });
+        else if (i === 2) savePlace({ ...base, tag: 'fav' });
+        else if (saved && i === 3) removePlace(place);
+      },
+    );
+  };
 
   const openWaze = () => {
     const url = `waze://?ll=${place.lat},${place.lng}&navigate=yes`;
@@ -33,6 +49,7 @@ export default function PlaceCard({
         <Image source={ICONS[`poi-${place.kind}-sel` as keyof typeof ICONS]} style={s.icon} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={s.kind} numberOfLines={1}>
+            {saved ? `★ ${tagLabel(saved.tag)} · ` : ''}
             {label}
           </Text>
           <Text style={s.name} numberOfLines={2}>
@@ -57,6 +74,7 @@ export default function PlaceCard({
 
       <View style={s.actions}>
         <PillButton chrome label="Directions" onPress={onDirections} style={{ flex: 2 }} />
+        <PillButton label={saved ? '★' : '☆'} onPress={onSave} accessibilityLabel="Save place" style={{ width: 50 }} />
         <PillButton label="Waze" onPress={openWaze} accessibilityLabel="Open in Waze" style={{ flex: 1 }} />
       </View>
     </View>

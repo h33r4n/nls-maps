@@ -45,6 +45,7 @@ export const ICONS = {
   'poi-tram-sel': require('../assets/poi/tram-sel.png'),
   'poi-place': require('../assets/poi/place.png'),
   'poi-place-sel': require('../assets/poi/place-sel.png'),
+  'poi-camera': require('../assets/poi/camera.png'),
 };
 
 export const layerId = (c: CatId) => `poi-${c}`;

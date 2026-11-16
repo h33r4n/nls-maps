@@ -1,15 +1,20 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CATS, ICONS, type CatId } from './places';
+import { hasTraffic, type TrafficMode } from './traffic';
 import { C, F, PillButton, Switch, tap } from './ui';
 
 export default function LayersPanel({
   on,
   setOn,
+  traffic,
+  setTraffic,
   onClose,
 }: {
   on: Record<CatId, boolean>;
   setOn: (next: Record<CatId, boolean>) => void;
+  traffic: TrafficMode;
+  setTraffic: (m: TrafficMode) => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -47,6 +52,25 @@ export default function LayersPanel({
             </Pressable>
           ))}
         </ScrollView>
+        <Text style={s.section}>traffic</Text>
+        <View style={[s.seg, !hasTraffic && { opacity: 0.4 }]}>
+          {(['off', 'busy', 'all'] as TrafficMode[]).map((m) => (
+            <Pressable
+              key={m}
+              disabled={!hasTraffic}
+              accessibilityRole="button"
+              accessibilityState={{ selected: traffic === m }}
+              onPress={() => {
+                tap();
+                setTraffic(m);
+              }}
+              style={[s.segBtn, traffic === m && s.segOn]}
+            >
+              <Text style={[s.segText, { color: traffic === m ? '#0B0B0B' : '#FFFFFF' }]}>{m === 'off' ? 'Off' : m === 'busy' ? 'Busy roads' : 'Every road'}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {!hasTraffic ? <Text style={s.note}>Live traffic switches on once the TomTom key is added.</Text> : null}
         <View style={s.buttons}>
           <PillButton chrome label="show all" onPress={() => all(true)} style={{ flex: 1 }} />
           <PillButton label="hide all" onPress={() => all(false)} style={{ flex: 1 }} />
@@ -81,5 +105,10 @@ const s = StyleSheet.create({
   icon: { width: 30, height: 30 },
   label: { flex: 1, fontFamily: F.ui, fontSize: 17, color: C.text },
   buttons: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  section: { fontFamily: F.mono, fontSize: 11, color: C.muted, marginTop: 10 },
+  seg: { flexDirection: 'row', padding: 3, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+  segBtn: { flex: 1, height: 36, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  segOn: { backgroundColor: '#E6E6E6' },
+  segText: { fontFamily: F.uiItalic, fontSize: 13 },
   note: { fontFamily: F.ui, fontSize: 13, lineHeight: 18, color: '#9A9A9A', marginTop: 4 },
 });

@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Image, Keyboard, Pressable, StyleSheet, Te
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fmtDist, type LL } from './geo';
 import { ICONS } from './places';
+import { tagLabel, useSaved } from './saved';
 import { searchPlaces, type Result } from './search';
 import { C, F, tap } from './ui';
 
@@ -13,6 +14,16 @@ export default function SearchSheet({ near, onPick, onClose }: { near: LL | null
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ctrl = useRef<AbortController | null>(null);
+  const saved = useSaved();
+  const savedRows: Result[] = saved.map((s) => ({
+    id: `saved-${s.id}`,
+    name: s.tag === 'fav' ? s.name : tagLabel(s.tag),
+    detail: s.tag === 'fav' ? `★ ${s.detail ?? 'saved'}` : `★ ${s.name}`,
+    lat: s.lat,
+    lng: s.lng,
+    kind: s.kind,
+  }));
+  const showSaved = q.trim().length < 2;
 
   useEffect(() => {
     const query = q.trim();
@@ -64,12 +75,12 @@ export default function SearchSheet({ near, onPick, onClose }: { near: LL | null
       </View>
 
       <FlatList
-        data={results}
+        data={showSaved ? savedRows : results}
         keyExtractor={(r) => r.id}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
         ListEmptyComponent={
-          q.trim().length >= 2 && !loading && error ? <Text style={s.empty}>{error}</Text> : <Text style={s.empty}>Try a street, a shop, or a stop name.</Text>
+          q.trim().length >= 2 && !loading && error ? <Text style={s.empty}>{error}</Text> : <Text style={s.empty}>{showSaved ? 'Save places with ☆ on any place card — Home and Work show up here.' : 'Try a street, a shop, or a stop name.'}</Text>
         }
         renderItem={({ item }) => (
           <Pressable

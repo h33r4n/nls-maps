@@ -1,4 +1,4 @@
-import { Camera, GeoJSONSource, Images, Layer, LayerAnnotation, Map, type CameraRef, type MapRef } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Images, Layer, LayerAnnotation, Map, VectorSource, type CameraRef, type MapRef } from '@maplibre/maplibre-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -13,7 +13,9 @@ import NavHUD from './NavHUD';
 import { CATS, ICONS, layerId, STOP_ZOOM, STOPS, type Cat, type CatId } from './places';
 import RoutePreview from './RoutePreview';
 import { getRoute, type Mode, type Route } from './routing';
+import { useRoadInfo } from './roadInfo';
 import SearchSheet from './SearchSheet';
+import { hasTraffic, trafficColour, trafficFilter, trafficTiles, type TrafficMode } from './traffic';
 import { PillButton } from './ui';
 import { useMe } from './useMe';
 
@@ -27,6 +29,7 @@ const C = { panel: 'rgba(11,11,11,0.9)', line: 'rgba(255,255,255,0.22)', text: '
 const MELBOURNE: [number, number] = [144.9631, -37.8136];
 const PITCH_3D = 55;
 const PITCH_NAV = 60;
+const ROUTE = '#9B5CFF';
 
 type Preview = { dest: Picked; mode: Mode; route: Route | null; loading: boolean; error: string | null };
 
@@ -109,6 +112,8 @@ export default function MapScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [traffic, setTraffic] = useState<TrafficMode>(hasTraffic ? 'busy' : 'off');
+  const road = useRoadInfo(me);
   const nav = useSyncExternalStore(subscribeNav, getNav);
   const busy = !!preview || nav.active;
 
@@ -231,6 +236,37 @@ export default function MapScreen() {
             <Layer key={c.id} {...poiLayer(c, on[c.id])} />
           ))}
         </GeoJSONSource>
+        {hasTraffic && traffic !== 'off' ? (
+          <VectorSource id="traffic" tiles={trafficTiles} maxzoom={18}>
+            <Layer
+              type="line"
+              id="traffic-flow"
+              source-layer="Traffic flow"
+              beforeId="building-3d"
+              filter={trafficFilter(traffic)}
+              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+              paint={{
+                'line-color': ['case', ['has', 'road_closure'], '#B00020', trafficColour],
+                'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.5, 14, 4, 18, 9],
+                'line-opacity': 0.95,
+              }}
+            />
+          </VectorSource>
+        ) : null}
+        <GeoJSONSource
+          id="cameras"
+          data={{
+            type: 'FeatureCollection',
+            features: road.cameras.map((c) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { kind: c.kind } })),
+          }}
+        >
+          <Layer
+            type="symbol"
+            id="camera-icons"
+            minzoom={12}
+            layout={{ 'icon-image': 'poi-camera', 'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.2, 17, 0.3], 'icon-allow-overlap': true }}
+          />
+        </GeoJSONSource>
         <GeoJSONSource
           id="route"
           data={{
@@ -251,14 +287,14 @@ export default function MapScreen() {
             type="line"
             id="route-glow"
             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            paint={{ 'line-color': '#FFFFFF', 'line-opacity': 0.25, 'line-blur': 6, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 10, 18, 30] }}
+            paint={{ 'line-color': ROUTE, 'line-opacity': 0.4, 'line-blur': 6, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 10, 18, 30] }}
           />
           <Layer
             type="line"
             id="route-line"
             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
             paint={{
-              'line-color': '#FFFFFF',
+              'line-color': ROUTE,
               'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3.5, 18, 12],
               ...((nav.route ?? preview?.route)?.mode === 'walk' ? { 'line-dasharray': [0.6, 1.6] } : {}),
             }}
@@ -358,6 +394,26 @@ export default function MapScreen() {
         </View>
       ) : null}
 
+      {road.ahead ? (
+        <View style={[styles.camAlert, { top: insets.top + (nav.active ? 160 : 84) }]} pointerEvents="none">
+          <View style={styles.camDot} />
+          <Text style={styles.camText}>
+            {road.ahead.cam.kind} camera · {Math.round(road.ahead.dist / 10) * 10} m
+          </Text>
+        </View>
+      ) : null}
+
+      {!busy && !picked && me && me.speedKmh > 8 ? (
+        <View style={[styles.drive, { bottom: insets.bottom + 132 }]} pointerEvents="none">
+          <Text style={[styles.driveNum, road.limit != null && me.speedKmh > road.limit + 2 && { color: '#FF3B4A' }]}>{me.speedKmh}</Text>
+          {road.limit != null ? (
+            <View style={styles.limit}>
+              <Text style={styles.limitNum}>{road.limit}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       {denied ? (
         <View style={[styles.notice, { top: insets.top + 84 }]}>
           <Text style={styles.noticeText}>Location is off. Go to Settings → NLS Maps → Location and pick "While Using" or "Always".</Text>
@@ -421,6 +477,7 @@ export default function MapScreen() {
         <NavHUD
           nav={nav}
           speedKmh={me?.speedKmh ?? 0}
+          limit={road.limit}
           following={follow}
           onEnd={endNav}
           onVoice={() => setVoice(!nav.voice)}
@@ -453,7 +510,7 @@ export default function MapScreen() {
         />
       ) : null}
 
-      {layersOpen ? <LayersPanel on={on} setOn={setOn} onClose={() => setLayersOpen(false)} /> : null}
+      {layersOpen ? <LayersPanel on={on} setOn={setOn} traffic={traffic} setTraffic={setTraffic} onClose={() => setLayersOpen(false)} /> : null}
     </View>
   );
 }
@@ -491,6 +548,37 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.4)',
   },
   hintText: { fontFamily: F.mono, fontSize: 11, color: '#E6E6E6' },
+  camAlert: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: 'rgba(11,11,11,0.95)',
+    borderWidth: 1.5,
+    borderColor: '#FF3B4A',
+  },
+  camDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B4A' },
+  camText: { fontFamily: F.uiItalic, fontSize: 15, color: '#FFFFFF' },
+  drive: {
+    position: 'absolute',
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 6,
+    paddingLeft: 16,
+    borderRadius: 999,
+    backgroundColor: 'rgba(11,11,11,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  driveNum: { fontFamily: F.brand, fontSize: 26, color: '#FFFFFF', minWidth: 36, textAlign: 'center' },
+  limit: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', borderWidth: 5, borderColor: '#E0242F', alignItems: 'center', justifyContent: 'center' },
+  limitNum: { fontFamily: F.brand, fontSize: 16, color: '#0B0B0B' },
   notice: { position: 'absolute', left: 16, right: 16, padding: 12, borderRadius: 18, backgroundColor: C.panel, borderWidth: 1, borderColor: '#FFFFFF' },
   noticeText: { fontFamily: F.ui, fontSize: 14, color: C.text },
   controls: {
