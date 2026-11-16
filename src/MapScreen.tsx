@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LayersPanel from './LayersPanel';
 import { mapStyle } from './mapStyle';
 import PlaceCard, { type Picked } from './PlaceCard';
-import { CATS, ICONS, layerId, STOP_ZOOM, type CatId } from './places';
+import { CATS, ICONS, layerId, STOP_ZOOM, STOPS, type Cat, type CatId } from './places';
 import { PillButton } from './ui';
 import { useMe } from './useMe';
 
@@ -22,7 +22,30 @@ const MELBOURNE: [number, number] = [144.9631, -37.8136];
 const PITCH_3D = 55;
 
 const guessCat = (p: Record<string, any>): CatId =>
-  p.subclass === 'tram_stop' ? 'tram' : p.class === 'bus' ? 'bus' : p.class === 'railway' ? 'train' : p.class === 'fuel' ? 'fuel' : 'food';
+  p.m === 'bus' || p.m === 'tram' || p.m === 'train' ? p.m : p.class === 'fuel' ? 'fuel' : 'food';
+
+function poiLayer(c: Cat, visible: boolean) {
+  return {
+    type: 'symbol' as const,
+    id: layerId(c.id),
+    minzoom: c.minzoom,
+    filter: c.filter,
+    layout: {
+      visibility: visible ? ('visible' as const) : ('none' as const),
+      'icon-image': `poi-${c.id}`,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.22, 17, 0.32] as any,
+      'icon-allow-overlap': c.id === 'train',
+      'icon-padding': 4,
+      'text-field': ['step', ['zoom'], '', 17, ['coalesce', ['get', 'n'], ['get', 'name:latin'], ['get', 'name']]] as any,
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 11,
+      'text-offset': [0, 1.5] as [number, number],
+      'text-anchor': 'top' as const,
+      'text-optional': true,
+    },
+    paint: { 'text-color': '#D6D6D6', 'text-halo-color': '#0B0B0B', 'text-halo-width': 1.5 },
+  };
+}
 
 const DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const dirText = (deg: number) => `${DIRS[Math.round((((deg % 360) + 360) % 360) / 45) % 8]} ${String(Math.round(deg)).padStart(3, '0')}°`;
@@ -86,7 +109,7 @@ export default function MapScreen() {
       const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
       const props = f.properties ?? {};
       const cat = guessCat(props);
-      const name = (props['name:latin'] || props.name || CATS.find((c) => c.id === cat)?.label || 'Place') as string;
+      const name = (props.n || props['name:latin'] || props.name || CATS.find((c) => c.id === cat)?.label || 'Place') as string;
       setPicked({ cat, name, lat, lng });
       setLayersOpen(false);
     } catch {
@@ -135,31 +158,14 @@ export default function MapScreen() {
           trackUserLocation={follow ? 'course' : undefined}
         />
         <Images images={{ 'me-arrow': require('../assets/me-arrow.png'), ...ICONS }} />
-        {CATS.map((c) => (
-          <Layer
-            key={c.id}
-            type="symbol"
-            id={layerId(c.id)}
-            source="openmaptiles"
-            source-layer="poi"
-            minzoom={c.minzoom}
-            filter={c.filter}
-            layout={{
-              visibility: on[c.id] ? 'visible' : 'none',
-              'icon-image': `poi-${c.id}`,
-              'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.22, 17, 0.32],
-              'icon-allow-overlap': c.id === 'train',
-              'icon-padding': 4,
-              'text-field': ['step', ['zoom'], '', 17, ['coalesce', ['get', 'name:latin'], ['get', 'name']]],
-              'text-font': ['Noto Sans Regular'],
-              'text-size': 11,
-              'text-offset': [0, 1.5],
-              'text-anchor': 'top',
-              'text-optional': true,
-            }}
-            paint={{ 'text-color': '#D6D6D6', 'text-halo-color': '#0B0B0B', 'text-halo-width': 1.5 }}
-          />
+        {CATS.filter((c) => !c.official).map((c) => (
+          <Layer key={c.id} {...poiLayer(c, on[c.id])} source="openmaptiles" source-layer="poi" />
         ))}
+        <GeoJSONSource id="pt" data={STOPS}>
+          {CATS.filter((c) => c.official).map((c) => (
+            <Layer key={c.id} {...poiLayer(c, on[c.id])} />
+          ))}
+        </GeoJSONSource>
         <GeoJSONSource
           id="picked"
           data={{

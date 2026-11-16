@@ -8,6 +8,7 @@ export type Cat = {
   short: string; // place card
   minzoom: number;
   filter: FilterSpecification;
+  official?: boolean; // from Transport Victoria GTFS (assets/stops.json) instead of OpenStreetMap
 };
 
 // OpenMapTiles "poi" layer → our five categories.
@@ -20,22 +21,15 @@ export const CATS: Cat[] = [
     filter: ['in', ['get', 'class'], ['literal', ['restaurant', 'fast_food', 'cafe', 'bar', 'beer', 'ice_cream', 'bakery']]],
   },
   { id: 'fuel', label: 'Petrol stations', short: 'petrol station', minzoom: 13, filter: ['==', ['get', 'class'], 'fuel'] },
-  { id: 'bus', label: 'Bus stops', short: 'bus stop', minzoom: 15.5, filter: ['==', ['get', 'class'], 'bus'] },
-  {
-    id: 'train',
-    label: 'Train stations',
-    short: 'train station',
-    minzoom: 12,
-    filter: [
-      'all',
-      ['==', ['get', 'class'], 'railway'],
-      ['in', ['get', 'subclass'], ['literal', ['station', 'halt']]],
-    ],
-  },
-  { id: 'tram', label: 'Tram stops', short: 'tram stop', minzoom: 15.5, filter: ['==', ['get', 'subclass'], 'tram_stop'] },
+  { id: 'bus', label: 'Bus stops', short: 'bus stop', minzoom: 15.5, filter: ['==', ['get', 'm'], 'bus'], official: true },
+  { id: 'train', label: 'Train stations', short: 'train station', minzoom: 11, filter: ['==', ['get', 'm'], 'train'], official: true },
+  { id: 'tram', label: 'Tram stops', short: 'tram stop', minzoom: 15.5, filter: ['==', ['get', 'm'], 'tram'], official: true },
 ];
 
 export const STOP_ZOOM = 15.5;
+
+// Official Victorian stops, refreshed weekly by the "Update PT stops" GitHub workflow.
+export const STOPS = require('../assets/stops.json');
 
 export const ICONS = {
   'poi-food': require('../assets/poi/food.png'),

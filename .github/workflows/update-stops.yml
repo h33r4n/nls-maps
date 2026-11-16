@@ -1,0 +1,47 @@
+name: Update PT stops
+
+on:
+  schedule:
+    - cron: '17 18 * * 0' # weekly, Monday ~5am Melbourne
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  stops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download Transport Victoria GTFS
+        run: |
+          URL=$(curl -sfL "https://opendata.transport.vic.gov.au/api/3/action/package_show?id=gtfs-schedule" \
+            | jq -r '[.result.resources[] | select((.format|ascii_downcase)=="zip")] | sort_by(.last_modified // .created) | last | .url')
+          echo "GTFS: $URL"
+          test -n "$URL" && test "$URL" != "null"
+          curl -sfL "$URL" -o gtfs.zip
+          ls -lh gtfs.zip
+          mkdir gtfs && unzip -q gtfs.zip -d gtfs
+          ls gtfs
+
+      - name: Build stops.json
+        run: node scripts/build-stops.mjs gtfs && ls -lh assets/stops.json
+
+      - name: Commit if changed, then rebuild the app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet assets/stops.json; then echo "No changes"; exit 0; fi
+          git config user.name "nls-bot"
+          git config user.email "nls-bot@users.noreply.github.com"
+          git add assets/stops.json
+          git commit -m "Update PT stops from Transport Victoria GTFS"
+          git push
+          gh workflow run build-ios.yml --ref main
