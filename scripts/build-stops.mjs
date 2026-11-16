@@ -57,7 +57,13 @@ function readFeed(dir) {
   };
 }
 
-const MODE = { 0: 'tram', 2: 'train', 3: 'bus', 5: 'tram' };
+// Basic + extended GTFS route types.
+const modeOf = (t) => {
+  if (t === 0 || t === 5 || (t >= 900 && t < 1000)) return 'tram';
+  if (t === 1 || t === 2 || (t >= 100 && t < 200) || (t >= 400 && t < 500)) return 'train';
+  if (t === 3 || (t >= 200 && t < 300) || (t >= 700 && t < 800)) return 'bus';
+  return undefined;
+};
 const features = [];
 const seen = new Set();
 const counts = {};
@@ -68,9 +74,12 @@ for (const name of readdirSync(root).sort()) {
   const feed = readFeed(dir);
   if (!feed) continue;
   const types = new Set(feed.routes.map((r) => Number(r.route_type)));
-  const modeType = [...types].find((t) => MODE[t] !== undefined);
-  if (modeType === undefined) continue;
-  const mode = MODE[modeType];
+  const modes = [...types].map(modeOf).filter(Boolean);
+  if (!modes.length) {
+    console.log(`folder ${name}: skipped, route types ${[...types].join(',')}`);
+    continue;
+  }
+  const mode = modes.includes('train') ? 'train' : modes[0];
   const hasParents = feed.stops.some((s) => s.location_type === '1');
 
   for (const s of feed.stops) {
@@ -92,7 +101,7 @@ for (const name of readdirSync(root).sort()) {
       properties: { m: mode, n: s.stop_name.trim(), i: s.stop_id },
     });
   }
-  console.log(`folder ${name}: mode ${mode}`);
+  console.log(`folder ${name}: mode ${mode} (route types ${[...types].join(',')})`);
 }
 
 if (features.length < 1000) throw new Error(`Only ${features.length} stops found — GTFS layout may have changed`);
