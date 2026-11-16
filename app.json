@@ -2,7 +2,7 @@
   "expo": {
     "name": "NLS Maps",
     "slug": "nls-maps",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.noqtrnl.logicsystems",
-      "buildNumber": "1"
+      "buildNumber": "2"
     },
     "plugins": [
       [
@@ -21,7 +21,8 @@
           "isIosBackgroundLocationEnabled": true
         }
       ],
-      "expo-live-activity"
+      "expo-live-activity",
+      "@maplibre/maplibre-react-native"
     ]
   }
 }
