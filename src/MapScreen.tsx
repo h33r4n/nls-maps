@@ -1,13 +1,19 @@
 import { Camera, GeoJSONSource, Images, Layer, LayerAnnotation, Map, type CameraRef, type MapRef } from '@maplibre/maplibre-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LayersPanel from './LayersPanel';
 import { mapStyle } from './mapStyle';
 import PlaceCard, { type Picked } from './PlaceCard';
+import { bounds } from './geo';
+import { getNav, onFix, setVoice, startNav, stopNav, subscribeNav } from './nav';
+import NavHUD from './NavHUD';
 import { CATS, ICONS, layerId, STOP_ZOOM, STOPS, type Cat, type CatId } from './places';
+import RoutePreview from './RoutePreview';
+import { getRoute, type Mode, type Route } from './routing';
+import SearchSheet from './SearchSheet';
 import { PillButton } from './ui';
 import { useMe } from './useMe';
 
@@ -20,6 +26,9 @@ const F = {
 const C = { panel: 'rgba(11,11,11,0.9)', line: 'rgba(255,255,255,0.22)', text: '#EDEDED', muted: '#A8A8A8' };
 const MELBOURNE: [number, number] = [144.9631, -37.8136];
 const PITCH_3D = 55;
+const PITCH_NAV = 60;
+
+type Preview = { dest: Picked; mode: Mode; route: Route | null; loading: boolean; error: string | null };
 
 const guessCat = (p: Record<string, any>): CatId =>
   p.m === 'bus' || p.m === 'tram' || p.m === 'train' ? p.m : p.class === 'fuel' ? 'fuel' : 'food';
@@ -97,8 +106,64 @@ export default function MapScreen() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [on, setOn] = useState<Record<CatId, boolean>>({ food: true, fuel: true, bus: true, train: true, tram: true });
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const nav = useSyncExternalStore(subscribeNav, getNav);
+  const busy = !!preview || nav.active;
+
+  // Foreground fixes drive navigation; the background task takes over when the screen is locked.
+  useEffect(() => {
+    if (nav.active && me) onFix({ lat: me.lat, lng: me.lng });
+  }, [me?.lat, me?.lng, nav.active]);
+
+  // Fetch (or refetch) the route whenever the destination or mode changes.
+  useEffect(() => {
+    if (!preview || preview.route || !preview.loading) return;
+    if (!me) {
+      setPreview({ ...preview, loading: false, error: 'Waiting for your location…' });
+      return;
+    }
+    const c = new AbortController();
+    getRoute(me, preview.dest, preview.mode, c.signal)
+      .then((route) => {
+        setPreview((p) => (p && p.dest === preview.dest && p.mode === route.mode ? { ...p, route, loading: false, error: null } : p));
+        const [w, so, e, n] = bounds(route.coords);
+        camera.current?.fitBounds([w, so, e, n], {
+          padding: { top: insets.top + 90, bottom: insets.bottom + 330, left: 50, right: 50 },
+          pitch: 0,
+          duration: 700,
+        });
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setPreview((p) => (p ? { ...p, loading: false, error: 'No route found — try the other mode, or check your signal.' } : p));
+      });
+    return () => c.abort();
+  }, [preview?.dest, preview?.mode, preview?.loading]);
+
+  const openDirections = (dest: Picked) => {
+    setPicked(null);
+    setFollow(false);
+    setPreview({ dest, mode: 'car', route: null, loading: true, error: null });
+  };
+  const go = async () => {
+    if (!preview?.route) return;
+    const msg = await startNav(preview.route, { name: preview.dest.name, lat: preview.dest.lat, lng: preview.dest.lng }, me);
+    setPreview(null);
+    setNotice(msg);
+    setFollow(true);
+    if (me) camera.current?.easeTo({ center: [me.lng, me.lat], zoom: 17.5, pitch: PITCH_NAV, duration: 800 });
+  };
+  const endNav = async () => {
+    await stopNav();
+    setNotice(null);
+    setFollow(true);
+    if (me) camera.current?.easeTo({ center: [me.lng, me.lat], zoom: 16, pitch: is3D ? PITCH_3D : 0, duration: 600 });
+  };
 
   const onMapPress = async (e: { nativeEvent: { point: [number, number] } }) => {
+    if (nav.active || preview) return;
     const [x, y] = e.nativeEvent.point;
     const ids = CATS.filter((c) => on[c.id]).map((c) => layerId(c.id));
     if (!ids.length) return setPicked(null);
@@ -110,7 +175,7 @@ export default function MapScreen() {
       const props = f.properties ?? {};
       const cat = guessCat(props);
       const name = (props.n || props['name:latin'] || props.name || CATS.find((c) => c.id === cat)?.label || 'Place') as string;
-      setPicked({ cat, name, lat, lng });
+      setPicked({ kind: cat, name, lat, lng });
       setLayersOpen(false);
     } catch {
       setPicked(null);
@@ -167,12 +232,49 @@ export default function MapScreen() {
           ))}
         </GeoJSONSource>
         <GeoJSONSource
+          id="route"
+          data={{
+            type: 'FeatureCollection',
+            features:
+              (nav.route ?? preview?.route)
+                ? [{ type: 'Feature', geometry: { type: 'LineString', coordinates: (nav.route ?? preview!.route)!.coords }, properties: {} }]
+                : [],
+          }}
+        >
+          <Layer
+            type="line"
+            id="route-casing"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{ 'line-color': '#0B0B0B', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 7, 18, 20] }}
+          />
+          <Layer
+            type="line"
+            id="route-glow"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{ 'line-color': '#FFFFFF', 'line-opacity': 0.25, 'line-blur': 6, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 10, 18, 30] }}
+          />
+          <Layer
+            type="line"
+            id="route-line"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{
+              'line-color': '#FFFFFF',
+              'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3.5, 18, 12],
+              ...((nav.route ?? preview?.route)?.mode === 'walk' ? { 'line-dasharray': [0.6, 1.6] } : {}),
+            }}
+          />
+        </GeoJSONSource>
+        <GeoJSONSource
           id="picked"
           data={{
             type: 'FeatureCollection',
             features: picked
-              ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [picked.lng, picked.lat] }, properties: { cat: picked.cat } }]
-              : [],
+              ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [picked.lng, picked.lat] }, properties: { cat: picked.kind } }]
+              : preview
+                ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [preview.dest.lng, preview.dest.lat] }, properties: { cat: preview.dest.kind } }]
+                : nav.dest
+                  ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [nav.dest.lng, nav.dest.lat] }, properties: { cat: 'place' } }]
+                  : [],
           }}
         >
           <Layer
@@ -219,19 +321,25 @@ export default function MapScreen() {
       </Map>
 
       {/* top status pill */}
+      {!busy ? (
       <View style={[styles.topPill, { top: insets.top + 6 }]}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.brand} numberOfLines={1}>
             Noqtrnl Logic Systems
           </Text>
           <Text style={styles.sub} numberOfLines={1}>
-            {me ? `spd ${String(me.speedKmh).padStart(2, '0')} km/h · hdg ${dirText(me.heading)}` : denied ? 'location is off' : 'finding you…'}
+            {me ? `● spd ${String(me.speedKmh).padStart(2, '0')} · ${dirText(me.heading)}` : denied ? 'location is off' : 'finding you…'}
           </Text>
         </View>
-        <View style={styles.gps}>
-          <View style={[styles.gpsDot, { opacity: me ? 1 : 0.3 }]} />
-          <Text style={styles.gpsText}>gps</Text>
-        </View>
+        <PillButton
+          label="⌕"
+          style={{ width: 44 }}
+          accessibilityLabel="Search places"
+          onPress={() => {
+            setPicked(null);
+            setSearchOpen(true);
+          }}
+        />
         <PillButton
           chrome
           label="layers"
@@ -242,8 +350,9 @@ export default function MapScreen() {
           }}
         />
       </View>
+      ) : null}
 
-      {zoom < STOP_ZOOM && (on.bus || on.tram) && !picked && !layersOpen ? (
+      {zoom < STOP_ZOOM && (on.bus || on.tram) && !picked && !layersOpen && !busy ? (
         <View style={[styles.hint, { top: insets.top + 84 }]} pointerEvents="none">
           <Text style={styles.hintText}>zoom in to see bus + tram stops</Text>
         </View>
@@ -255,7 +364,7 @@ export default function MapScreen() {
         </View>
       ) : null}
 
-      {!picked ? (
+      {!picked && !busy ? (
       <>
       {/* controls */}
       <View style={[styles.controls, { bottom: insets.bottom + 14 }]}>
@@ -287,7 +396,62 @@ export default function MapScreen() {
       </>
       ) : null}
 
-      {picked ? <PlaceCard place={picked} me={me} bottom={insets.bottom + 12} onClose={() => setPicked(null)} /> : null}
+      {picked && !busy ? (
+        <PlaceCard place={picked} me={me} bottom={insets.bottom + 12} onClose={() => setPicked(null)} onDirections={() => openDirections(picked)} />
+      ) : null}
+
+      {preview ? (
+        <RoutePreview
+          name={preview.dest.name}
+          mode={preview.mode}
+          setMode={(m) => m !== preview.mode && setPreview({ ...preview, mode: m, route: null, loading: true, error: null })}
+          route={preview.route}
+          loading={preview.loading}
+          error={preview.error}
+          bottom={insets.bottom + 12}
+          onGo={go}
+          onClose={() => {
+            setPreview(null);
+            recentre();
+          }}
+        />
+      ) : null}
+
+      {nav.active && nav.route ? (
+        <NavHUD
+          nav={nav}
+          speedKmh={me?.speedKmh ?? 0}
+          following={follow}
+          onEnd={endNav}
+          onVoice={() => setVoice(!nav.voice)}
+          onRecentre={() => {
+            setFollow(true);
+            if (me) camera.current?.easeTo({ center: [me.lng, me.lat], zoom: 17.5, pitch: PITCH_NAV, duration: 600 });
+          }}
+        />
+      ) : null}
+
+      {notice && nav.active ? (
+        <View style={[styles.notice, { top: insets.top + 170 }]}>
+          <Text style={styles.noticeText} onPress={() => setNotice(null)}>
+            {notice}
+          </Text>
+        </View>
+      ) : null}
+
+      {searchOpen ? (
+        <SearchSheet
+          near={me}
+          onClose={() => setSearchOpen(false)}
+          onPick={(r) => {
+            setSearchOpen(false);
+            const p: Picked = { kind: r.kind, name: r.name, detail: r.detail, lat: r.lat, lng: r.lng };
+            setPicked(p);
+            setFollow(false);
+            camera.current?.flyTo({ center: [r.lng, r.lat], zoom: 16.5, duration: 900 });
+          }}
+        />
+      ) : null}
 
       {layersOpen ? <LayersPanel on={on} setOn={setOn} onClose={() => setLayersOpen(false)} /> : null}
     </View>
@@ -302,8 +466,8 @@ const styles = StyleSheet.create({
     right: 10,
     paddingVertical: 10,
     paddingLeft: 16,
-    paddingRight: 14,
-    borderRadius: 26,
+    paddingRight: 8,
+    borderRadius: 30,
     backgroundColor: C.panel,
     borderWidth: 1,
     borderColor: C.line,
@@ -311,7 +475,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  brand: { fontFamily: F.brand, fontSize: 17, color: '#FFFFFF', letterSpacing: -0.2 },
+  brand: { fontFamily: F.brand, fontSize: 16, color: '#FFFFFF', letterSpacing: -0.2 },
   sub: { fontFamily: F.mono, fontSize: 11, color: C.muted, marginTop: 1 },
   gps: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   gpsDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },

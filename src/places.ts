@@ -1,6 +1,7 @@
 import type { FilterSpecification } from '@maplibre/maplibre-react-native';
 
 export type CatId = 'food' | 'fuel' | 'bus' | 'train' | 'tram';
+export type PlaceKind = CatId | 'place';
 
 export type Cat = {
   id: CatId;
@@ -42,6 +43,8 @@ export const ICONS = {
   'poi-bus-sel': require('../assets/poi/bus-sel.png'),
   'poi-train-sel': require('../assets/poi/train-sel.png'),
   'poi-tram-sel': require('../assets/poi/tram-sel.png'),
+  'poi-place': require('../assets/poi/place.png'),
+  'poi-place-sel': require('../assets/poi/place-sel.png'),
 };
 
 export const layerId = (c: CatId) => `poi-${c}`;

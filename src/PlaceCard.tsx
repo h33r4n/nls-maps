@@ -1,24 +1,26 @@
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { CATS, fmtDist, ICONS, metres, type CatId } from './places';
+import { fmtDist, metres } from './geo';
+import { CATS, ICONS, type PlaceKind } from './places';
 import { C, F, PillButton } from './ui';
 
-export type Picked = { cat: CatId; name: string; lat: number; lng: number };
+export type Picked = { kind: PlaceKind; name: string; detail?: string; lat: number; lng: number };
 
 export default function PlaceCard({
   place,
   me,
   bottom,
   onClose,
+  onDirections,
 }: {
   place: Picked;
   me: { lat: number; lng: number } | null;
   bottom: number;
   onClose: () => void;
+  onDirections: () => void;
 }) {
-  const cat = CATS.find((c) => c.id === place.cat)!;
+  const label = place.kind === 'place' ? place.detail || 'place' : CATS.find((c) => c.id === place.kind)!.short;
   const d = me ? metres(me, place) : null;
-  const walk = d != null ? Math.max(1, Math.round(d / 80)) : null;
-  const isStop = place.cat === 'bus' || place.cat === 'tram' || place.cat === 'train';
+  const isStop = place.kind === 'bus' || place.kind === 'tram' || place.kind === 'train';
 
   const openWaze = () => {
     const url = `waze://?ll=${place.lat},${place.lng}&navigate=yes`;
@@ -28,9 +30,11 @@ export default function PlaceCard({
   return (
     <View style={[s.card, { bottom }]}>
       <View style={s.top}>
-        <Image source={ICONS[`poi-${place.cat}-sel` as keyof typeof ICONS]} style={s.icon} />
+        <Image source={ICONS[`poi-${place.kind}-sel` as keyof typeof ICONS]} style={s.icon} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={s.kind}>{cat.short}</Text>
+          <Text style={s.kind} numberOfLines={1}>
+            {label}
+          </Text>
           <Text style={s.name} numberOfLines={2}>
             {place.name}
           </Text>
@@ -42,21 +46,19 @@ export default function PlaceCard({
 
       <View style={s.stats}>
         <View style={s.stat}>
-          <Text style={s.statK}>distance</Text>
+          <Text style={s.statK}>away</Text>
           <Text style={s.statV}>{d != null ? fmtDist(d) : '—'}</Text>
         </View>
         <View style={[s.stat, s.statBorder]}>
-          <Text style={s.statK}>walk</Text>
-          <Text style={s.statV}>{walk != null ? `${walk} min` : '—'}</Text>
-        </View>
-        <View style={[s.stat, s.statBorder]}>
-          <Text style={s.statK}>{isStop ? 'live times' : 'directions'}</Text>
-          <Text style={s.statV}>{isStop ? 'soon' : 'phase 4'}</Text>
+          <Text style={s.statK}>{isStop ? 'live times' : 'walk'}</Text>
+          <Text style={s.statV}>{isStop ? 'soon' : d != null ? `~${Math.max(1, Math.round((d * 1.3) / 80))} min` : '—'}</Text>
         </View>
       </View>
 
-      <PillButton chrome label="Open in Waze" onPress={openWaze} />
-      <Text style={s.foot}>Straight-line distance. Proper routes and turn-by-turn arrive in Phase 4.</Text>
+      <View style={s.actions}>
+        <PillButton chrome label="Directions" onPress={onDirections} style={{ flex: 2 }} />
+        <PillButton label="Waze" onPress={openWaze} accessibilityLabel="Open in Waze" style={{ flex: 1 }} />
+      </View>
     </View>
   );
 }
@@ -84,5 +86,5 @@ const s = StyleSheet.create({
   statBorder: { borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.18)', paddingLeft: 12 },
   statK: { fontFamily: F.mono, fontSize: 11, color: C.muted },
   statV: { fontFamily: F.mono, fontSize: 16, color: '#FFFFFF' },
-  foot: { fontFamily: F.ui, fontSize: 12, color: '#9A9A9A' },
+  actions: { flexDirection: 'row', gap: 8 },
 });
