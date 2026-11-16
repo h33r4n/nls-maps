@@ -54,7 +54,7 @@ export function useMe() {
             Location.reverseGeocodeAsync({ latitude: lat, longitude: lng })
               .then((r) => {
                 const a = r[0];
-                suburb.current = a?.district || a?.subregion || a?.city || suburb.current;
+                suburb.current = a?.city || a?.district || a?.subregion || suburb.current;
               })
               .catch(() => {});
           }

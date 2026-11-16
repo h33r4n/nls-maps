@@ -93,7 +93,7 @@ export default function MapScreen() {
         compass={false}
         scaleBar={false}
         attribution
-        attributionPosition={{ bottom: insets.bottom + 4, right: 120 }}
+        attributionPosition={{ top: insets.top + 86, right: 14 }}
         onRegionWillChange={(e) => {
           if (e.nativeEvent.userInteraction) setFollow(false);
         }}
@@ -182,7 +182,9 @@ export default function MapScreen() {
         <Text style={styles.suburb} numberOfLines={1}>
           {me?.suburb ?? 'Melbourne'}
         </Text>
-        <Text style={styles.mode}>{follow ? 'following you' : 'free look'}</Text>
+        <Text style={styles.mode} numberOfLines={1}>
+          {follow ? 'following you' : 'free look'}
+        </Text>
       </View>
     </View>
   );
@@ -232,7 +234,8 @@ const styles = StyleSheet.create({
   info: {
     position: 'absolute',
     right: 12,
-    maxWidth: 210,
+    maxWidth: 230,
+    minWidth: 150,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 22,

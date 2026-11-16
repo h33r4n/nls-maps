@@ -8,7 +8,7 @@ export const T = {
   water: '#000000',
   waterLine: '#5c5c5c',
   park: '#121212',
-  building: '#1F1F1F',
+  building: '#2E2E2E',
   road: '#E6E6E6',
   minor: '#8A8A8A',
   path: '#4A4A4A',
@@ -196,7 +196,7 @@ export const mapStyle: StyleSpecification = {
       'source-layer': 'place',
       minzoom: 11,
       maxzoom: 16,
-      filter: ['in', ['get', 'class'], ['literal', ['suburb', 'neighbourhood', 'quarter', 'town', 'village']]],
+      filter: ['in', ['get', 'class'], ['literal', ['suburb', 'town', 'village']]],
       layout: {
         'text-field': ['coalesce', ['get', 'name:latin'], ['get', 'name']],
         'text-font': ['Noto Sans Italic'],
