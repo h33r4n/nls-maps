@@ -1,10 +1,14 @@
-import { Camera, Images, Layer, LayerAnnotation, Map, type CameraRef, type MapRef } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Images, Layer, LayerAnnotation, Map, type CameraRef, type MapRef } from '@maplibre/maplibre-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LayersPanel from './LayersPanel';
 import { mapStyle } from './mapStyle';
+import PlaceCard, { type Picked } from './PlaceCard';
+import { CATS, ICONS, layerId, STOP_ZOOM, type CatId } from './places';
+import { PillButton } from './ui';
 import { useMe } from './useMe';
 
 const F = {
@@ -16,6 +20,9 @@ const F = {
 const C = { panel: 'rgba(11,11,11,0.9)', line: 'rgba(255,255,255,0.22)', text: '#EDEDED', muted: '#A8A8A8' };
 const MELBOURNE: [number, number] = [144.9631, -37.8136];
 const PITCH_3D = 55;
+
+const guessCat = (p: Record<string, any>): CatId =>
+  p.subclass === 'tram_stop' ? 'tram' : p.class === 'bus' ? 'bus' : p.class === 'railway' ? 'train' : p.class === 'fuel' ? 'fuel' : 'food';
 
 const DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const dirText = (deg: number) => `${DIRS[Math.round((((deg % 360) + 360) % 360) / 45) % 8]} ${String(Math.round(deg)).padStart(3, '0')}°`;
@@ -64,6 +71,28 @@ export default function MapScreen() {
   const [is3D, setIs3D] = useState(true);
   const [zoom, setZoom] = useState(16);
   const time = useClock();
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [on, setOn] = useState<Record<CatId, boolean>>({ food: true, fuel: true, bus: true, train: true, tram: true });
+  const [picked, setPicked] = useState<Picked | null>(null);
+
+  const onMapPress = async (e: { nativeEvent: { point: [number, number] } }) => {
+    const [x, y] = e.nativeEvent.point;
+    const ids = CATS.filter((c) => on[c.id]).map((c) => layerId(c.id));
+    if (!ids.length) return setPicked(null);
+    try {
+      const feats = await map.current?.queryRenderedFeatures([[x - 22, y - 22], [x + 22, y + 22]], { layers: ids });
+      const f = feats?.find((ft) => ft.geometry?.type === 'Point');
+      if (!f) return setPicked(null);
+      const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
+      const props = f.properties ?? {};
+      const cat = guessCat(props);
+      const name = (props['name:latin'] || props.name || CATS.find((c) => c.id === cat)?.label || 'Place') as string;
+      setPicked({ cat, name, lat, lng });
+      setLayersOpen(false);
+    } catch {
+      setPicked(null);
+    }
+  };
 
   const zoomBy = (d: number) => {
     const z = Math.max(3, Math.min(20, zoom + d));
@@ -98,13 +127,59 @@ export default function MapScreen() {
           if (e.nativeEvent.userInteraction) setFollow(false);
         }}
         onRegionDidChange={(e) => setZoom(e.nativeEvent.zoom)}
+        onPress={(e) => onMapPress(e as any)}
       >
         <Camera
           ref={camera}
           initialViewState={{ center: MELBOURNE, zoom: 16, pitch: PITCH_3D }}
           trackUserLocation={follow ? 'course' : undefined}
         />
-        <Images images={{ 'me-arrow': require('../assets/me-arrow.png') }} />
+        <Images images={{ 'me-arrow': require('../assets/me-arrow.png'), ...ICONS }} />
+        {CATS.map((c) => (
+          <Layer
+            key={c.id}
+            type="symbol"
+            id={layerId(c.id)}
+            source="openmaptiles"
+            source-layer="poi"
+            minzoom={c.minzoom}
+            filter={c.filter}
+            layout={{
+              visibility: on[c.id] ? 'visible' : 'none',
+              'icon-image': `poi-${c.id}`,
+              'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.22, 17, 0.32],
+              'icon-allow-overlap': c.id === 'train',
+              'icon-padding': 4,
+              'text-field': ['step', ['zoom'], '', 17, ['coalesce', ['get', 'name:latin'], ['get', 'name']]],
+              'text-font': ['Noto Sans Regular'],
+              'text-size': 11,
+              'text-offset': [0, 1.5],
+              'text-anchor': 'top',
+              'text-optional': true,
+            }}
+            paint={{ 'text-color': '#D6D6D6', 'text-halo-color': '#0B0B0B', 'text-halo-width': 1.5 }}
+          />
+        ))}
+        <GeoJSONSource
+          id="picked"
+          data={{
+            type: 'FeatureCollection',
+            features: picked
+              ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [picked.lng, picked.lat] }, properties: { cat: picked.cat } }]
+              : [],
+          }}
+        >
+          <Layer
+            type="symbol"
+            id="picked-icon"
+            layout={{
+              'icon-image': ['concat', 'poi-', ['get', 'cat'], '-sel'],
+              'icon-size': 0.42,
+              'icon-allow-overlap': true,
+              'icon-ignore-placement': true,
+            }}
+          />
+        </GeoJSONSource>
         {me ? (
           <LayerAnnotation id="me" lngLat={[me.lng, me.lat]} animated>
             <Layer
@@ -151,7 +226,22 @@ export default function MapScreen() {
           <View style={[styles.gpsDot, { opacity: me ? 1 : 0.3 }]} />
           <Text style={styles.gpsText}>gps</Text>
         </View>
+        <PillButton
+          chrome
+          label="layers"
+          accessibilityLabel="Open map layers"
+          onPress={() => {
+            setPicked(null);
+            setLayersOpen(true);
+          }}
+        />
       </View>
+
+      {zoom < STOP_ZOOM && (on.bus || on.tram) && !picked && !layersOpen ? (
+        <View style={[styles.hint, { top: insets.top + 84 }]} pointerEvents="none">
+          <Text style={styles.hintText}>zoom in to see bus + tram stops</Text>
+        </View>
+      ) : null}
 
       {denied ? (
         <View style={[styles.notice, { top: insets.top + 84 }]}>
@@ -159,6 +249,8 @@ export default function MapScreen() {
         </View>
       ) : null}
 
+      {!picked ? (
+      <>
       {/* controls */}
       <View style={[styles.controls, { bottom: insets.bottom + 14 }]}>
         <RoundBtn label="Zoom in" onPress={() => zoomBy(1)}>
@@ -186,6 +278,12 @@ export default function MapScreen() {
           {follow ? 'following you' : 'free look'}
         </Text>
       </View>
+      </>
+      ) : null}
+
+      {picked ? <PlaceCard place={picked} me={me} bottom={insets.bottom + 12} onClose={() => setPicked(null)} /> : null}
+
+      {layersOpen ? <LayersPanel on={on} setOn={setOn} onClose={() => setLayersOpen(false)} /> : null}
     </View>
   );
 }
@@ -212,6 +310,17 @@ const styles = StyleSheet.create({
   gps: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   gpsDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
   gpsText: { fontFamily: F.mono, fontSize: 11, color: '#D6D6D6' },
+  hint: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: C.panel,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  hintText: { fontFamily: F.mono, fontSize: 11, color: '#E6E6E6' },
   notice: { position: 'absolute', left: 16, right: 16, padding: 12, borderRadius: 18, backgroundColor: C.panel, borderWidth: 1, borderColor: '#FFFFFF' },
   noticeText: { fontFamily: F.ui, fontSize: 14, color: C.text },
   controls: {
